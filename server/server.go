@@ -1,79 +1,77 @@
-/*package main
-
-import (
-	"bytes"
-	"encoding/gob"
-	"fmt"
-	"net"
-)
-
-type Data struct {
-	Body []byte
-	Data []bye
-}
-
-func Listen() net.Listener {
-
-	listener, e := net.Listen("tcp", "localhost:9000")
-	if e != nil {
-		fmt.Println(e.Error())
-	}
-	return listener
-
-}
-func main() {
-
-	listener := Listen()
-	publish := Data{Body: []byte("Publish"), Data: []byte("Hello")}
-	buffer := new(bytes.Buffer)
-
-	encoder := gob.NewEncoder(buffer)
-	data := encoder.Encode(publish)
-
-	conn, _ := listener.Accept()
-	for {
-
-		//fmt.Fprint(conn, "Hello")
-		conn.Write(data)
-
-		msg, _ := bufio.NewReader(conn).ReadString('\n')
-		fmt.Println(msg)
-	}
-
-}
-*/
-
 package server
 
 import (
+	"broker/utils"
 	"encoding/gob"
 	"log"
 	"net"
 )
 
-type Data struct {
-	Head []byte
-	Body []byte
+type Exchange struct {
+	Queues map[string]chan utils.Data
+	Call   func(map[string]chan utils.Data, utils.Data)
+}
+
+func NewExchange(c func(map[string]chan utils.Data, utils.Data)) *Exchange {
+	s := Exchange{}
+	s.Call = c
+	s.Queues = make(map[string]chan utils.Data)
+
+	return &s
+}
+
+func (e *Exchange) BindQueue(name string, channel chan utils.Data) {
+	e.Queues[name] = channel
 }
 
 type Server struct {
 	Addr      string
-	Exchanges map[string]func(Data)
-	Queues    map[string]chan Data
+	Exchanges map[string]*Exchange
 	Listener  net.Listener
 }
 
-func handleConnection(conn net.Conn) {
+func NewServer(addr string) *Server {
+
+	s := Server{}
+	s.Exchanges = make(map[string]*Exchange)
+	s.Addr = addr
+
+	return &s
+}
+
+func (s *Server) HandleConnection(conn net.Conn) {
 
 	for {
 		dec := gob.NewDecoder(conn)
 
-		d := &Data{}
+		d := &utils.Data{}
 		dec.Decode(d)
+		/*
+			if d != nil {
+				log.Println(string(d.Body))
+			}
+		*/
 
-		if d != nil {
-			log.Println(string(d.Body))
+		if d.Type == 1 && s.Exchanges[d.Exchange] != nil && d != nil {
+			//enc := gob.NewEncoder(conn)
+			//s.Exchanges[d.Exchange].Queues[string(d.Head)] <- *d
+			//enc.Encode(d)
+			go s.Exchanges[d.Exchange].Call(s.Exchanges[d.Exchange].Queues, *d)
+
 		}
+
+		if d.Type == 0 {
+
+			for _, ex := range s.Exchanges {
+				if ex.Queues[string(d.Head)] != nil {
+					data := <-ex.Queues[string(d.Head)]
+					enc := gob.NewEncoder(conn)
+
+					enc.Encode(data)
+				}
+			}
+		}
+
 	}
 }
 func (s *Server) Listen() {
@@ -84,13 +82,15 @@ func (s *Server) Listen() {
 	s.Listener, e = net.Listen("tcp", s.Addr)
 
 	if e != nil {
-
+		log.Println(e.Error())
 	}
 
 	for {
 
 		conn, e = s.Listener.Accept()
 
-		go handleConnection(conn)
+		if conn != nil {
+			go s.HandleConnection(conn)
+		}
 	}
 }
