@@ -18,10 +18,11 @@ func direct(queues map[string]chan utils.Data, d utils.Data) {
 func main() {
 	q := make(chan utils.Data)
 	e := server.NewExchange(direct)
-	e.BindQueue("q1", q)
 
 	s := server.NewServer("localhost:9000")
 	s.Exchanges["direct"] = e
+	s.AddQueue("q1",q)
+	s.BindQueue("direct","q1")
 	go s.Listen()
 	//log.Println("Im here")
 	for {

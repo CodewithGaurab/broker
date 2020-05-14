@@ -6,7 +6,18 @@ import (
 	"log"
 	"net"
 )
+func (s *Server)AddQueue(name string, chann chan utils.Data){
+	s.Queues[name] = chann
+}
 
+func (s *Server)BindQueue(name string,queuename string){
+
+	for k,v := range s.Queues{
+		if k == queuename{
+			s.Exchanges[name].BindQueue(queuename,v)
+		}
+	}
+}
 type Exchange struct {
 	Queues map[string]chan utils.Data
 	Call   func(map[string]chan utils.Data, utils.Data)
@@ -25,6 +36,8 @@ func (e *Exchange) BindQueue(name string, channel chan utils.Data) {
 }
 
 type Server struct {
+	Queues map[string]chan utils.Data
+
 	Addr      string
 	Exchanges map[string]*Exchange
 	Listener  net.Listener
@@ -35,7 +48,7 @@ func NewServer(addr string) *Server {
 	s := Server{}
 	s.Exchanges = make(map[string]*Exchange)
 	s.Addr = addr
-
+	s.Queues = make(map[string] chan utils.Data)
 	return &s
 }
 
@@ -61,9 +74,10 @@ func (s *Server) HandleConnection(conn net.Conn) {
 		}
 
 		if d.Type == 0 {
-
 			for _, ex := range s.Exchanges {
 				if ex.Queues[string(d.Head)] != nil {
+					log.Println(<-ex.Queues[string(d.Head)])
+
 					data := <-ex.Queues[string(d.Head)]
 					enc := gob.NewEncoder(conn)
 
